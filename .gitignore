@@ -14,3 +14,7 @@ Cargo.lock
 
 /target
 /Cargo.lock
+.db_test_read_write_value/
+.db_test_read_unknown_key/
+.db_test_read_notify/
+.db_test_create_store/
