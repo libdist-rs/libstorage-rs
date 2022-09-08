@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::{Key, Value};
 
 #[async_trait]
-pub trait Store: Send + Sync 
+pub trait Store: Send + Sync + 'static 
 {
     /// Write a value to the disk
     async fn write(&mut self, key: Key, value: Value);
