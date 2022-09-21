@@ -13,28 +13,33 @@ mod tests;
 pub struct Storage {
     channel: Sender<StoreCommand>,
 }
+const DB_NAME: Option<&str> = Some("Data");
 
 impl Storage {
     pub fn new(path: &str) -> anyhow::Result<Self> {
-        let env = Box::new(Environment::new()
+        let env = { 
+            let env = Box::new(Environment::new()
                     .set_max_dbs(1)
                     .open(&Path::new(path))?);
+            let t = env.begin_rw_txn()?;
+            let _ = t.create_db(DB_NAME, libmdbx::DatabaseFlags::default())?;
+            t.commit()?;
+            env
+        };
         let mut obligations = HashMap::<_, VecDeque<oneshot::Sender<_>>>::new();
         let (tx, mut rx) = channel(100);
         tokio::spawn(async move {
-            let db_name = Some("Data");
-            let t = env.begin_rw_txn().unwrap();
-            let db = t.create_db(db_name, libmdbx::DatabaseFlags::default()).unwrap();
             while let Some(command) = rx.recv().await {
                 match command {
                     StoreCommand::Write(key, value) => {
                         let txn = env.begin_rw_txn().expect("Failed to create a transaction");
                         txn.put(
-                            &db,
+                            &txn.open_db(DB_NAME).unwrap(),
                             key.clone(), 
                             value.clone(), 
                             libmdbx::WriteFlags::default(),
                         ).expect("failed to put data into the DB");
+                        txn.commit().unwrap();
                         if let Some(mut senders) = obligations.remove(&key) {
                             while let Some(s) = senders.pop_front() {
                                 let _ = s.send(Ok(value.clone()));
@@ -44,20 +49,24 @@ impl Storage {
                     StoreCommand::Read(key, sender) => {
                         let response = {
                             let txn = env.begin_rw_txn().expect("Failed to create a transaction");
-                            txn.get(
-                                &db,
+                            let res = txn.get(
+                                &txn.open_db(DB_NAME).unwrap(),
                                 &key
-                            )
+                            );
+                            txn.commit().unwrap();
+                            res
                         };
                         let _ = sender.send(response.map_err(|e| e.into()));
                     }
                     StoreCommand::NotifyRead(key, sender) => {
                         let response: Result<Option<_>, libmdbx::Error> = {
                             let txn = env.begin_ro_txn().expect("Failed to create a transaction");
-                            txn.get::<Key>(
-                                &db,
+                            let res = txn.get::<Key>(
+                                &txn.open_db(DB_NAME).unwrap(),
                                 &key
-                            )
+                            );
+                            txn.commit().unwrap();
+                            res
                         };
                         match response {
                             Ok(None) => obligations

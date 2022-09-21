@@ -4,6 +4,7 @@ use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
 use crate::{StoreCommand, Value, Key};
 use crate::Store;
+use anyhow::Result;
 
 #[derive(Clone)]
 pub struct Storage {
@@ -11,7 +12,7 @@ pub struct Storage {
 }
 
 impl Storage {
-    pub fn new(path: &str) -> anyhow::Result<Self> {
+    pub fn new(path: &str) -> Result<Self> {
         let mut db_opts = rocksdb::Options::default();
         db_opts.create_if_missing(true);
         let db = rocksdb::DB::open(&db_opts, path)?;

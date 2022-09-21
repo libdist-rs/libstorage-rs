@@ -17,9 +17,7 @@ pub use traits::*;
 #[cfg(feature = "rocksdb")]
 mod rocksdb_impl;
 #[cfg(feature = "rocksdb")]
-pub use rocksdb_impl::*;
+pub mod rocksdb { pub use crate::rocksdb_impl::*; }
 
 #[cfg(feature = "mdbx")]
-mod mdbx;
-#[cfg(feature = "mdbx")]
-pub use mdbx::*;
+pub mod mdbx;
