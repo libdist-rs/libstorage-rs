@@ -10,6 +10,7 @@ rocksdb = "0"
 libmdbx = "0"
 anyhow = "1"
 async-trait = "0"
+log = "0"
 
 [dependencies.tokio]
 version = "1"
@@ -18,4 +19,4 @@ features = ["sync", "macros", "rt"]
 [features]
 rocksdb = []
 mdbx = []
-default = ["rocksdb"]
+default = ["rocksdb", "mdbx"]

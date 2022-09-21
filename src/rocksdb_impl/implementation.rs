@@ -2,9 +2,8 @@ use std::collections::{HashMap, VecDeque};
 use async_trait::async_trait;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
-
-use crate::{StoreCommand, Value, Key, Store};
-
+use crate::{StoreCommand, Value, Key};
+use crate::Store;
 
 #[derive(Clone)]
 pub struct Storage {
@@ -13,7 +12,9 @@ pub struct Storage {
 
 impl Storage {
     pub fn new(path: &str) -> anyhow::Result<Self> {
-        let db = rocksdb::DB::open_default(path)?;
+        let mut db_opts = rocksdb::Options::default();
+        db_opts.create_if_missing(true);
+        let db = rocksdb::DB::open(&db_opts, path)?;
         let mut obligations = HashMap::<_, VecDeque<oneshot::Sender<_>>>::new();
         let (tx, mut rx) = channel(100);
         tokio::spawn(async move {
@@ -48,6 +49,9 @@ impl Storage {
                     }
                 }
             }
+            log::info!("The database is shutting down!");
+            db.flush()
+                .expect("Failed to flush the database after dropping");
         });
         Ok(Self { channel: tx })
     }
