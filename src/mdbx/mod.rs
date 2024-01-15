@@ -4,7 +4,7 @@ use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
 use crate::{StoreCommand, Key, Value};
 
-type Environment = libmdbx::Environment<libmdbx::NoWriteMap>;
+type Environment = libmdbx::Database<libmdbx::NoWriteMap>;
 
 #[cfg(test)]
 mod tests;
@@ -13,16 +13,14 @@ mod tests;
 pub struct Storage {
     channel: Sender<StoreCommand>,
 }
-const DB_NAME: Option<&str> = Some("Data");
+const DB_NAME: Option<&str> = None;
 
 impl Storage {
     pub fn new(path: &str) -> anyhow::Result<Self> {
-        let env = { 
-            let env = Box::new(Environment::new()
-                    .set_max_dbs(1)
-                    .open(&Path::new(path))?);
+        let env = {
+            let env = Box::new(Environment::open(&Path::new(path))?);
             let t = env.begin_rw_txn()?;
-            let _ = t.create_db(DB_NAME, libmdbx::DatabaseFlags::default())?;
+            let _ = t.open_table(DB_NAME)?;
             t.commit()?;
             env
         };
@@ -34,7 +32,7 @@ impl Storage {
                     StoreCommand::Write(key, value) => {
                         let txn = env.begin_rw_txn().expect("Failed to create a transaction");
                         txn.put(
-                            &txn.open_db(DB_NAME).unwrap(),
+                            &txn.open_table(DB_NAME).unwrap(),
                             key.clone(), 
                             value.clone(), 
                             libmdbx::WriteFlags::default(),
@@ -50,7 +48,7 @@ impl Storage {
                         let response = {
                             let txn = env.begin_rw_txn().expect("Failed to create a transaction");
                             let res = txn.get(
-                                &txn.open_db(DB_NAME).unwrap(),
+                                &txn.open_table(DB_NAME).unwrap(),
                                 &key
                             );
                             txn.commit().unwrap();
@@ -62,7 +60,7 @@ impl Storage {
                         let response: Result<Option<_>, libmdbx::Error> = {
                             let txn = env.begin_ro_txn().expect("Failed to create a transaction");
                             let res = txn.get::<Key>(
-                                &txn.open_db(DB_NAME).unwrap(),
+                                &txn.open_table(DB_NAME).unwrap(),
                                 &key
                             );
                             txn.commit().unwrap();
