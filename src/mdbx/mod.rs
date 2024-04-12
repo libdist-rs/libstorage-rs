@@ -1,10 +1,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+use libmdbx::{Database, NoWriteMap};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
 use crate::{StoreCommand, Key, Value};
-
-type Environment = libmdbx::Database<libmdbx::NoWriteMap>;
 
 #[cfg(test)]
 mod tests;
@@ -16,26 +15,22 @@ pub struct Storage {
 const DB_NAME: Option<&str> = None;
 
 impl Storage {
-    pub fn new(path: &str) -> anyhow::Result<Self> {
-        let env = {
-            let env = Box::new(Environment::open(&Path::new(path))?);
-            let t = env.begin_rw_txn()?;
-            let _ = t.open_table(DB_NAME)?;
-            t.commit()?;
-            env
-        };
+    pub fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let db = Box::new(Database::<NoWriteMap>::open(path).unwrap());
         let mut obligations = HashMap::<_, VecDeque<oneshot::Sender<_>>>::new();
         let (tx, mut rx) = channel(100);
         tokio::spawn(async move {
+            let txn = db.begin_ro_txn().unwrap();
+            let table = txn.open_table(DB_NAME).unwrap();
             while let Some(command) = rx.recv().await {
                 match command {
                     StoreCommand::Write(key, value) => {
-                        let txn = env.begin_rw_txn().expect("Failed to create a transaction");
+                        let txn = db.begin_rw_txn().expect("Failed to create a transaction");
                         txn.put(
-                            &txn.open_table(DB_NAME).unwrap(),
-                            key.clone(), 
+                            &table,
+                            key.clone(),
                             value.clone(), 
-                            libmdbx::WriteFlags::default(),
+                            libmdbx::WriteFlags::UPSERT,
                         ).expect("failed to put data into the DB");
                         txn.commit().unwrap();
                         if let Some(mut senders) = obligations.remove(&key) {
@@ -46,9 +41,9 @@ impl Storage {
                     }
                     StoreCommand::Read(key, sender) => {
                         let response = {
-                            let txn = env.begin_rw_txn().expect("Failed to create a transaction");
+                            let txn = db.begin_rw_txn().expect("Failed to create a transaction");
                             let res = txn.get(
-                                &txn.open_table(DB_NAME).unwrap(),
+                                &table,
                                 &key
                             );
                             txn.commit().unwrap();
@@ -58,9 +53,9 @@ impl Storage {
                     }
                     StoreCommand::NotifyRead(key, sender) => {
                         let response: Result<Option<_>, libmdbx::Error> = {
-                            let txn = env.begin_ro_txn().expect("Failed to create a transaction");
+                            let txn = db.begin_ro_txn().expect("Failed to create a transaction");
                             let res = txn.get::<Key>(
-                                &txn.open_table(DB_NAME).unwrap(),
+                                &table,
                                 &key
                             );
                             txn.commit().unwrap();

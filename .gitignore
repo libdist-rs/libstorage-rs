@@ -14,3 +14,4 @@ Cargo.lock
 
 .db_*/
 .mdb_*/
+/.DS_Store
